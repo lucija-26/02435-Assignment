@@ -4,7 +4,7 @@ import numpy as np
 # Import data from LoadingData.py
 from LoadingData import occupancy_room1, occupancy_room2, price_data
 from SystemCharacteristics import get_fixed_data
-
+#Whatever
 def create_HVAC_model(scenario_idx=0):
     """
     Create Pyomo model for HVAC optimization.
