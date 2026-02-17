@@ -111,11 +111,8 @@ def create_HVAC_model(scenario_idx=0):
     # --- 3.3.1 Temperature Equation (eq 1) ---
     def temperature_rule(m, r, t):
         if t == 0:
-            temp_prev = m.temp_init
-            other_room = 2 if r == 1 else 1
-            other_temp_prev = m.temp_init
-            v_prev = 0  # initial ventilation status
-            O_prev = m.O[r, 0]  # use t=0 occupancy for initial
+            # First hour: temperature equals initial value
+            return m.temp[r, t] == m.temp_init
         else:
             temp_prev = m.temp[r, t-1]
             other_room = 2 if r == 1 else 1
@@ -123,14 +120,14 @@ def create_HVAC_model(scenario_idx=0):
             v_prev = m.v[t-1]
             O_prev = m.O[r, t-1]
         
-        return m.temp[r, t] == (
-            temp_prev
-            + m.zeta_exch * (other_temp_prev - temp_prev)  # heat exchange between rooms
-            + m.zeta_loss * (m.temp_out[t-1 if t > 0 else 0] - temp_prev)  # heat loss to outside
-            + m.zeta_heat * m.p[r, t-1 if t > 0 else 0]  # heater effect
-            - m.zeta_vent * v_prev  # ventilation cooling
-            + m.zeta_occ * O_prev  # occupancy heat gain
-        )
+            return m.temp[r, t] == (
+                temp_prev
+                + m.zeta_exch * (other_temp_prev - temp_prev)  # heat exchange between rooms
+                + m.zeta_loss * (m.temp_out[t-1] - temp_prev)  # heat loss to outside
+                + m.zeta_heat * m.p[r, t-1]  # heater effect
+                - m.zeta_vent * v_prev  # ventilation cooling
+                + m.zeta_occ * O_prev  # occupancy heat gain
+            )
     model.temperature_constraint = pyo.Constraint(model.R, model.T, rule=temperature_rule)
     
     # --- 3.3.2 Temperature Overrule Controller ---
@@ -160,7 +157,11 @@ def create_HVAC_model(scenario_idx=0):
     # OM state transition (eq 8)
     def om_transition_rule(m, r, t):
         if t == 0:
-            return m.OM[r, t] == 0  # initial status
+            # Use the known initial temperature parameter (not the variable)
+            if pyo.value(m.temp_init) < pyo.value(m.T_Low):
+                return m.OM[r, t] == 1  # start in overrule mode
+            else:
+                return m.OM[r, t] == 0  # start with overrule off
         return m.OM[r, t] == m.OM[r, t-1] - m.OM_off[r, t]
     model.om_transition = pyo.Constraint(model.R, model.T, rule=om_transition_rule)
     
@@ -184,15 +185,14 @@ def create_HVAC_model(scenario_idx=0):
     # --- 3.3.3 Humidity Equation (eq 10) ---
     def humidity_rule(m, t):
         if t == 0:
-            hum_prev = m.hum_init
-            v_prev = 0
-            O_total_prev = m.O[1, 0] + m.O[2, 0]
+            # First hour: humidity equals initial value
+            return m.hum[t] == m.hum_init
         else:
             hum_prev = m.hum[t-1]
             v_prev = m.v[t-1]
             O_total_prev = m.O[1, t-1] + m.O[2, t-1]
         
-        return m.hum[t] == hum_prev - m.eta_vent * v_prev + m.eta_occ * O_total_prev
+            return m.hum[t] == hum_prev - m.eta_vent * v_prev + m.eta_occ * O_total_prev
     model.humidity_constraint = pyo.Constraint(model.T, rule=humidity_rule)
     
     # --- 3.3.4 Humidity Overrule Controller (eq 11) ---
@@ -317,27 +317,39 @@ if __name__ == "__main__":
     print("  - Sheet 'Daily_Costs': Daily electricity costs")
     print("  - Sheet 'Summary': Summary statistics")
     
-    # ----- Plot results for day 1 as an example -----
-    print("\n--- Plotting results for Day 1 ---")
-    model = create_HVAC_model(scenario_idx=11)
+    # ----- Plot results for a selected day -----
+    selected_day = 50
+    print(f"\n--- Plotting results for Day {selected_day + 1} ---")
+    model = create_HVAC_model(scenario_idx=selected_day)
     solver.solve(model, tee=False)
+    
+    # Print temperature and overrule mode for each room at each hour
+    print(f"\nTemperatures and Overrule Mode for Day {selected_day + 1}:")
+    print(f"{'Hour':<6} {'Room 1 (°C)':<15} {'Room 2 (°C)':<15} {'OM Room 1':<12} {'OM Room 2':<12}")
+    print("-" * 60)
+    for t in model.T:
+        temp_r1 = pyo.value(model.temp[1, t])
+        temp_r2 = pyo.value(model.temp[2, t])
+        om_r1 = int(pyo.value(model.OM[1, t]))
+        om_r2 = int(pyo.value(model.OM[2, t]))
+        print(f"{t:<6} {temp_r1:<15.2f} {temp_r2:<15.2f} {om_r1:<12} {om_r2:<12}")
     
     # Get initial values from parameters
     params = get_fixed_data()
     temp_init = params['initial_temperature']
     hum_init = params['initial_humidity']
     
-    # Include initial values at t=0, then computed values for t=0,1,...,9 become t=1,2,...,10
+    # Extract results directly from model (t=0 already uses initial values in constraints)
     HVAC_results = {
-        'Temp_r1': [temp_init] + [pyo.value(model.temp[1, t]) for t in model.T],
-        'Temp_r2': [temp_init] + [pyo.value(model.temp[2, t]) for t in model.T],
-        'h_r1': [0] + [pyo.value(model.p[1, t]) for t in model.T],  # no heater action at t=0
-        'h_r2': [0] + [pyo.value(model.p[2, t]) for t in model.T],
-        'v': [0] + [pyo.value(model.v[t]) for t in model.T],  # ventilation off initially
-        'Hum': [hum_init] + [pyo.value(model.hum[t]) for t in model.T],
-        'price': [pyo.value(model.lambda_t[0])] + [pyo.value(model.lambda_t[t]) for t in model.T],
-        'Occ_r1': [pyo.value(model.O[1, 0])] + [pyo.value(model.O[1, t]) for t in model.T],
-        'Occ_r2': [pyo.value(model.O[2, 0])] + [pyo.value(model.O[2, t]) for t in model.T],
+        'Temp_r1': [pyo.value(model.temp[1, t]) for t in model.T],
+        'Temp_r2': [pyo.value(model.temp[2, t]) for t in model.T],
+        'h_r1': [pyo.value(model.p[1, t]) for t in model.T],
+        'h_r2': [pyo.value(model.p[2, t]) for t in model.T],
+        'v': [pyo.value(model.v[t]) for t in model.T],
+        'Hum': [pyo.value(model.hum[t]) for t in model.T],
+        'price': [pyo.value(model.lambda_t[t]) for t in model.T],
+        'Occ_r1': [pyo.value(model.O[1, t]) for t in model.T],
+        'Occ_r2': [pyo.value(model.O[2, t]) for t in model.T],
     }
     
     from PlotsRestaurant import plot_HVAC_results
