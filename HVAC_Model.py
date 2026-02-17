@@ -289,30 +289,30 @@ if __name__ == "__main__":
         print(f"Max daily cost: {max(daily_costs):.4f} €")
     
     # ----- Export results to Excel -----
-    excel_file = 'HVAC_Results.xlsx'
+    # excel_file = 'HVAC_Results.xlsx'
     
-    with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
-        # Sheet 1: Detailed hourly results
-        df_detailed = pd.DataFrame(all_results)
-        df_detailed.to_excel(writer, sheet_name='Hourly_Results', index=False)
+    # with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
+    #     # Sheet 1: Detailed hourly results
+    #     df_detailed = pd.DataFrame(all_results)
+    #     df_detailed.to_excel(writer, sheet_name='Hourly_Results', index=False)
         
-        # Sheet 2: Daily summary
-        df_daily = pd.DataFrame({
-            'Day': list(range(1, len(daily_costs) + 1)),
-            'Daily_Cost_EUR': daily_costs
+    #     # Sheet 2: Daily summary
+    #     df_daily = pd.DataFrame({
+    #         'Day': list(range(1, len(daily_costs) + 1)),
+    #         'Daily_Cost_EUR': daily_costs
 
-        })
-        df_daily.to_excel(writer, sheet_name='Daily_Costs', index=False)
+    #     })
+    #     df_daily.to_excel(writer, sheet_name='Daily_Costs', index=False)
         
-        # Sheet 3: Summary statistics
-        df_summary = pd.DataFrame({
-            'Metric': ['Average Daily Cost (EUR)', 'Min Daily Cost (EUR)', 
-                       'Max Daily Cost (EUR)', 'Total Days Solved'],
-            'Value': [average_cost, min(daily_costs), max(daily_costs), len(daily_costs)]
-        })
-        df_summary.to_excel(writer, sheet_name='Summary', index=False)
+    #     # Sheet 3: Summary statistics
+    #     df_summary = pd.DataFrame({
+    #         'Metric': ['Average Daily Cost (EUR)', 'Min Daily Cost (EUR)', 
+    #                    'Max Daily Cost (EUR)', 'Total Days Solved'],
+    #         'Value': [average_cost, min(daily_costs), max(daily_costs), len(daily_costs)]
+    #     })
+    #     df_summary.to_excel(writer, sheet_name='Summary', index=False)
     
-    print(f"\nResults saved to Excel: {excel_file}")
+    #print(f"\nResults saved to Excel: {excel_file}")
     print("  - Sheet 'Hourly_Results': Detailed hourly data for all days")
     print("  - Sheet 'Daily_Costs': Daily electricity costs")
     print("  - Sheet 'Summary': Summary statistics")
