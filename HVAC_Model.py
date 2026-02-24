@@ -61,7 +61,8 @@ def create_HVAC_model(scenario_idx=0):
     
     # Big-M for constraints
     model.M = pyo.Param(initialize=100)
-    
+    # Binary for switch on of Override Mode
+    model.OM_on = pyo.Var(model.R, model.T, domain=pyo.Binary)
     # ==============================
     # Variables
     # ==============================
@@ -127,7 +128,7 @@ def create_HVAC_model(scenario_idx=0):
                 + m.zeta_heat * m.p[r, t-1]  # heater effect
                 - m.zeta_vent * v_prev  # ventilation cooling
                 + m.zeta_occ * O_prev  # occupancy heat gain
-            )
+            )  
     model.temperature_constraint = pyo.Constraint(model.R, model.T, rule=temperature_rule)
     
     # --- 3.3.2 Temperature Overrule Controller ---
@@ -143,6 +144,11 @@ def create_HVAC_model(scenario_idx=0):
     def overrule_trigger_rule(m, r, t):
         return m.T_Low - m.temp[r, t] <= m.M * m.OM[r, t]
     model.overrule_trigger = pyo.Constraint(model.R, model.T, rule=overrule_trigger_rule)
+
+    # # OM_on can only be 1 if temp is below T_Low
+    # def om_on_trigger_rule(m, r, t):
+    #     return m.T_Low - m.temp[r, t] <= m.M * m.OM_on[r, t]
+    # model.om_on_trigger = pyo.Constraint(model.R, model.T, rule=om_on_trigger_rule)
     
     # Exit path - detect when temp reaches T_OK (eq 6)
     def temp_ok_indicator_rule(m, r, t):
@@ -155,22 +161,35 @@ def create_HVAC_model(scenario_idx=0):
     model.om_off_condition = pyo.Constraint(model.R, model.T, rule=om_off_condition_rule)
     
     # OM state transition (eq 8)
+    # def om_transition_rule(m, r, t):
+    #     if t == 0:
+    #         # Use the known initial temperature parameter (not the variable)
+    #         if pyo.value(m.temp_init) < pyo.value(m.T_Low):
+    #             return m.OM[r, t] == 1  # start in overrule mode
+    #         else:
+    #             return m.OM[r, t] == 0  # start with overrule off
+    #     return m.OM[r, t] == m.OM[r, t-1] - m.OM_off[r, t]
+    # model.om_transition = pyo.Constraint(model.R, model.T, rule=om_transition_rule)
+    
     def om_transition_rule(m, r, t):
         if t == 0:
-            # Use the known initial temperature parameter (not the variable)
+            # Initialize OM based on initial temperature
             if pyo.value(m.temp_init) < pyo.value(m.T_Low):
-                return m.OM[r, t] == 1  # start in overrule mode
+                return m.OM[r, t] == 1
             else:
-                return m.OM[r, t] == 0  # start with overrule off
-        return m.OM[r, t] == m.OM[r, t-1] - m.OM_off[r, t]
+                return m.OM[r, t] == 0
+        return m.OM[r, t] == m.OM[r, t-1] + m.OM_on[r, t] - m.OM_off[r, t]
+
     model.om_transition = pyo.Constraint(model.R, model.T, rule=om_transition_rule)
-    
+
     # OM_off <= OM_{t-1} (can only switch off if it was on)
     def om_off_limit_rule(m, r, t):
         if t == 0:
             return m.OM_off[r, t] == 0
         return m.OM_off[r, t] <= m.OM[r, t-1]
     model.om_off_limit = pyo.Constraint(model.R, model.T, rule=om_off_limit_rule)
+
+   
     
     # Upper Temperature Bound - detect when above T_High (eq 8 upper)
     def temp_high_indicator_rule(m, r, t):
@@ -318,39 +337,41 @@ if __name__ == "__main__":
     print("  - Sheet 'Summary': Summary statistics")
     
     # ----- Plot results for a selected day -----
-    selected_day = 50
+    selected_day = 10
     print(f"\n--- Plotting results for Day {selected_day + 1} ---")
     model = create_HVAC_model(scenario_idx=selected_day)
-    solver.solve(model, tee=False)
+    results = solver.solve(model, tee=False)
+    if results.solver.termination_condition != pyo.TerminationCondition.optimal:
+        print(f"Day {selected_day + 1}: Solver failed - {results.solver.termination_condition}")
+    else:
+        # Print temperature and overrule mode for each room at each hour
+        print(f"\nTemperatures and Overrule Mode for Day {selected_day + 1}:")
+        print(f"{'Hour':<6} {'Room 1 (°C)':<15} {'Room 2 (°C)':<15} {'OM Room 1':<12} {'OM Room 2':<12}")
+        print("-" * 60)
+        for t in model.T:
+            temp_r1 = pyo.value(model.temp[1, t])
+            temp_r2 = pyo.value(model.temp[2, t])
+            om_r1 = int(pyo.value(model.OM[1, t]))
+            om_r2 = int(pyo.value(model.OM[2, t]))
+            print(f"{t:<6} {temp_r1:<15.2f} {temp_r2:<15.2f} {om_r1:<12} {om_r2:<12}")
     
-    # Print temperature and overrule mode for each room at each hour
-    print(f"\nTemperatures and Overrule Mode for Day {selected_day + 1}:")
-    print(f"{'Hour':<6} {'Room 1 (°C)':<15} {'Room 2 (°C)':<15} {'OM Room 1':<12} {'OM Room 2':<12}")
-    print("-" * 60)
-    for t in model.T:
-        temp_r1 = pyo.value(model.temp[1, t])
-        temp_r2 = pyo.value(model.temp[2, t])
-        om_r1 = int(pyo.value(model.OM[1, t]))
-        om_r2 = int(pyo.value(model.OM[2, t]))
-        print(f"{t:<6} {temp_r1:<15.2f} {temp_r2:<15.2f} {om_r1:<12} {om_r2:<12}")
-    
-    # Get initial values from parameters
-    params = get_fixed_data()
-    temp_init = params['initial_temperature']
-    hum_init = params['initial_humidity']
-    
-    # Extract results directly from model (t=0 already uses initial values in constraints)
-    HVAC_results = {
-        'Temp_r1': [pyo.value(model.temp[1, t]) for t in model.T],
-        'Temp_r2': [pyo.value(model.temp[2, t]) for t in model.T],
-        'h_r1': [pyo.value(model.p[1, t]) for t in model.T],
-        'h_r2': [pyo.value(model.p[2, t]) for t in model.T],
-        'v': [pyo.value(model.v[t]) for t in model.T],
-        'Hum': [pyo.value(model.hum[t]) for t in model.T],
-        'price': [pyo.value(model.lambda_t[t]) for t in model.T],
-        'Occ_r1': [pyo.value(model.O[1, t]) for t in model.T],
-        'Occ_r2': [pyo.value(model.O[2, t]) for t in model.T],
-    }
-    
-    from PlotsRestaurant import plot_HVAC_results
-    plot_HVAC_results(HVAC_results)
+        # Get initial values from parameters
+        params = get_fixed_data()
+        temp_init = params['initial_temperature']
+        hum_init = params['initial_humidity']
+        
+        # Extract results directly from model (t=0 already uses initial values in constraints)
+        HVAC_results = {
+            'Temp_r1': [pyo.value(model.temp[1, t]) for t in model.T],
+            'Temp_r2': [pyo.value(model.temp[2, t]) for t in model.T],
+            'h_r1': [pyo.value(model.p[1, t]) for t in model.T],
+            'h_r2': [pyo.value(model.p[2, t]) for t in model.T],
+            'v': [pyo.value(model.v[t]) for t in model.T],
+            'Hum': [pyo.value(model.hum[t]) for t in model.T],
+            'price': [pyo.value(model.lambda_t[t]) for t in model.T],
+            'Occ_r1': [pyo.value(model.O[1, t]) for t in model.T],
+            'Occ_r2': [pyo.value(model.O[2, t]) for t in model.T],
+        }
+        
+        from PlotsRestaurant import plot_HVAC_results
+        plot_HVAC_results(HVAC_results)
