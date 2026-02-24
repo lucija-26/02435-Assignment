@@ -140,10 +140,19 @@ def create_HVAC_model(scenario_idx=0):
         return m.p[r, t] >= m.OM[r, t] * m.P_max
     model.overrule_power = pyo.Constraint(model.R, model.T, rule=overrule_power_rule)
     
+
+    ############################
+
+
+
     # Trigger for overrule mode when temp below T_Low (eq 5)
     def overrule_trigger_rule(m, r, t):
-        return m.T_Low - m.temp[r, t] <= m.M * m.OM[r, t]
+        return m.T_Low - m.temp[r, t] <= m.M * m.OM[r, t] 
     model.overrule_trigger = pyo.Constraint(model.R, model.T, rule=overrule_trigger_rule)
+
+
+
+    ############################
 
     # # OM_on can only be 1 if temp is below T_Low
     # def om_on_trigger_rule(m, r, t):
@@ -159,28 +168,31 @@ def create_HVAC_model(scenario_idx=0):
     def om_off_condition_rule(m, r, t):
         return m.OM_off[r, t] <= m.delta_OK[r, t]
     model.om_off_condition = pyo.Constraint(model.R, model.T, rule=om_off_condition_rule)
-    
+    # OM must be 0 if temp is above T_OK
+    def overrule_off_rule(m, r, t):
+        return m.temp[r, t] - m.T_OK <= m.M * (1 - m.OM[r, t])
+    model.overrule_off = pyo.Constraint(model.R, model.T, rule=overrule_off_rule)
     # OM state transition (eq 8)
-    # def om_transition_rule(m, r, t):
-    #     if t == 0:
-    #         # Use the known initial temperature parameter (not the variable)
-    #         if pyo.value(m.temp_init) < pyo.value(m.T_Low):
-    #             return m.OM[r, t] == 1  # start in overrule mode
-    #         else:
-    #             return m.OM[r, t] == 0  # start with overrule off
-    #     return m.OM[r, t] == m.OM[r, t-1] - m.OM_off[r, t]
-    # model.om_transition = pyo.Constraint(model.R, model.T, rule=om_transition_rule)
-    
     def om_transition_rule(m, r, t):
         if t == 0:
-            # Initialize OM based on initial temperature
+            # Use the known initial temperature parameter (not the variable)
             if pyo.value(m.temp_init) < pyo.value(m.T_Low):
-                return m.OM[r, t] == 1
+                return m.OM[r, t] == 1  # start in overrule mode
             else:
-                return m.OM[r, t] == 0
+                return m.OM[r, t] == 0  # start with overrule off
         return m.OM[r, t] == m.OM[r, t-1] + m.OM_on[r, t] - m.OM_off[r, t]
-
     model.om_transition = pyo.Constraint(model.R, model.T, rule=om_transition_rule)
+    
+    # def om_transition_rule(m, r, t):
+    #     if t == 0:
+    #         # Initialize OM based on initial temperature
+    #         if pyo.value(m.temp_init) < pyo.value(m.T_Low):
+    #             return m.OM[r, t] == 1
+    #         else:
+    #             return m.OM[r, t] == 0
+    #     return m.OM[r, t] == m.OM[r, t-1] + m.OM_on[r, t] - m.OM_off[r, t]
+
+    # model.om_transition = pyo.Constraint(model.R, model.T, rule=om_transition_rule)
 
     # OM_off <= OM_{t-1} (can only switch off if it was on)
     def om_off_limit_rule(m, r, t):
@@ -189,8 +201,16 @@ def create_HVAC_model(scenario_idx=0):
         return m.OM_off[r, t] <= m.OM[r, t-1]
     model.om_off_limit = pyo.Constraint(model.R, model.T, rule=om_off_limit_rule)
 
-   
+    def om_on_limit_rule(m, r, t):
+        if t == 0:
+            return m.OM_on[r, t] == 0
+        return m.OM_on[r, t] <= 1 - m.OM[r, t-1]
+    model.om_on_limit = pyo.Constraint(model.R, model.T, rule=om_on_limit_rule)
     
+    def om_switch_rule(m, r, t):
+        return m.OM_on[r, t] + m.OM_off[r, t] <= 1
+    model.om_switch = pyo.Constraint(model.R, model.T, rule=om_switch_rule)
+
     # Upper Temperature Bound - detect when above T_High (eq 8 upper)
     def temp_high_indicator_rule(m, r, t):
         return m.temp[r, t] - m.T_High <= m.M * m.eta_High[r, t]
@@ -337,7 +357,7 @@ if __name__ == "__main__":
     print("  - Sheet 'Summary': Summary statistics")
     
     # ----- Plot results for a selected day -----
-    selected_day = 10
+    selected_day = 11
     print(f"\n--- Plotting results for Day {selected_day + 1} ---")
     model = create_HVAC_model(scenario_idx=selected_day)
     results = solver.solve(model, tee=False)
