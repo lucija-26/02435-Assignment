@@ -5,7 +5,7 @@ Created on Sun Nov 16 13:14:45 2025
 @author: geots
 """
 
-def plot_HVAC_results(HVAC_results):
+def plot_HVAC_results(HVAC_results, day=None):
     import matplotlib.pyplot as plt
     
     
@@ -22,6 +22,9 @@ def plot_HVAC_results(HVAC_results):
     T = list(range(len(Temp_r1)))  # Time periods based on the length of Temp_r1 (the 10 hours in a day)
     
     fig, axes = plt.subplots(4, 1, figsize=(12, 14), sharex=True)
+
+    if day is not None:
+        fig.suptitle(f"HVAC Results - Day {day}", fontsize=14, fontweight='bold')
 
     ## Temp_r1, Temp_r2, etc are imported from HVAC_results
 
@@ -63,5 +66,8 @@ def plot_HVAC_results(HVAC_results):
     axes[3].legend()
     axes[3].grid(True)
     
-    plt.tight_layout()
+    if day is not None:
+        plt.tight_layout(rect=[0, 0, 1, 0.97])
+    else:
+        plt.tight_layout()
     plt.show()

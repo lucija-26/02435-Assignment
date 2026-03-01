@@ -339,4 +339,4 @@ if __name__ == "__main__":
         }
         
         from PlotsRestaurant import plot_HVAC_results
-        plot_HVAC_results(HVAC_results)
+        plot_HVAC_results(HVAC_results, day=selected_day + 1)
