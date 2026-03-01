@@ -4,7 +4,6 @@ import numpy as np
 # Import data from LoadingData.py
 from LoadingData import occupancy_room1, occupancy_room2, price_data
 from SystemCharacteristics import get_fixed_data
-#Whatever
 def create_HVAC_model(scenario_idx=0):
     """
     Create Pyomo model for HVAC optimization.
@@ -133,7 +132,7 @@ def create_HVAC_model(scenario_idx=0):
     
     # --- 3.3.2 Temperature Overrule Controller ---
     
-    # Heater bounds (eq 3): 0 <= p_{r,t} <= P_max (already in variable bounds)
+    # Heater bounds (eq 3): 0 <= p_{r,t} <= P_max
     
     # Lower Temperature Bound - Overrule ensures power at max when OM is on (eq 4)
     def overrule_power_rule(m, r, t):
@@ -141,23 +140,10 @@ def create_HVAC_model(scenario_idx=0):
     model.overrule_power = pyo.Constraint(model.R, model.T, rule=overrule_power_rule)
     
 
-    ############################
-
-
-
     # Trigger for overrule mode when temp below T_Low (eq 5)
     def overrule_trigger_rule(m, r, t):
         return m.T_Low - m.temp[r, t] <= m.M * m.OM[r, t] 
     model.overrule_trigger = pyo.Constraint(model.R, model.T, rule=overrule_trigger_rule)
-
-
-
-    ############################
-
-    # # OM_on can only be 1 if temp is below T_Low
-    # def om_on_trigger_rule(m, r, t):
-    #     return m.T_Low - m.temp[r, t] <= m.M * m.OM_on[r, t]
-    # model.om_on_trigger = pyo.Constraint(model.R, model.T, rule=om_on_trigger_rule)
     
     # Exit path - detect when temp reaches T_OK (eq 6)
     def temp_ok_indicator_rule(m, r, t):
@@ -182,17 +168,6 @@ def create_HVAC_model(scenario_idx=0):
                 return m.OM[r, t] == 0  # start with overrule off
         return m.OM[r, t] == m.OM[r, t-1] + m.OM_on[r, t] - m.OM_off[r, t]
     model.om_transition = pyo.Constraint(model.R, model.T, rule=om_transition_rule)
-    
-    # def om_transition_rule(m, r, t):
-    #     if t == 0:
-    #         # Initialize OM based on initial temperature
-    #         if pyo.value(m.temp_init) < pyo.value(m.T_Low):
-    #             return m.OM[r, t] == 1
-    #         else:
-    #             return m.OM[r, t] == 0
-    #     return m.OM[r, t] == m.OM[r, t-1] + m.OM_on[r, t] - m.OM_off[r, t]
-
-    # model.om_transition = pyo.Constraint(model.R, model.T, rule=om_transition_rule)
 
     # OM_off <= OM_{t-1} (can only switch off if it was on)
     def om_off_limit_rule(m, r, t):
@@ -327,35 +302,6 @@ if __name__ == "__main__":
         print(f"Min daily cost: {min(daily_costs):.4f} €")
         print(f"Max daily cost: {max(daily_costs):.4f} €")
     
-    # ----- Export results to Excel -----
-    # excel_file = 'HVAC_Results.xlsx'
-    
-    # with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
-    #     # Sheet 1: Detailed hourly results
-    #     df_detailed = pd.DataFrame(all_results)
-    #     df_detailed.to_excel(writer, sheet_name='Hourly_Results', index=False)
-        
-    #     # Sheet 2: Daily summary
-    #     df_daily = pd.DataFrame({
-    #         'Day': list(range(1, len(daily_costs) + 1)),
-    #         'Daily_Cost_EUR': daily_costs
-
-    #     })
-    #     df_daily.to_excel(writer, sheet_name='Daily_Costs', index=False)
-        
-    #     # Sheet 3: Summary statistics
-    #     df_summary = pd.DataFrame({
-    #         'Metric': ['Average Daily Cost (EUR)', 'Min Daily Cost (EUR)', 
-    #                    'Max Daily Cost (EUR)', 'Total Days Solved'],
-    #         'Value': [average_cost, min(daily_costs), max(daily_costs), len(daily_costs)]
-    #     })
-    #     df_summary.to_excel(writer, sheet_name='Summary', index=False)
-    
-    #print(f"\nResults saved to Excel: {excel_file}")
-    print("  - Sheet 'Hourly_Results': Detailed hourly data for all days")
-    print("  - Sheet 'Daily_Costs': Daily electricity costs")
-    print("  - Sheet 'Summary': Summary statistics")
-    
     # ----- Plot results for a selected day -----
     selected_day = 11
     print(f"\n--- Plotting results for Day {selected_day + 1} ---")
@@ -380,7 +326,6 @@ if __name__ == "__main__":
         temp_init = params['initial_temperature']
         hum_init = params['initial_humidity']
         
-        # Extract results directly from model (t=0 already uses initial values in constraints)
         HVAC_results = {
             'Temp_r1': [pyo.value(model.temp[1, t]) for t in model.T],
             'Temp_r2': [pyo.value(model.temp[2, t]) for t in model.T],
